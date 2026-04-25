@@ -10,6 +10,7 @@ import os
 import threading
 
 from src.predict_dl import predict
+from src.preprocess import extract_pokemon_debug
 from src.api import fetch_pokemon_info
 from src.history import log_prediction, get_history
 
@@ -169,10 +170,16 @@ class PokedexApp(ctk.CTk):
         self.inner_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.inner_frame.pack_propagate(False)
 
-        # --- Image display area ---
-        self.image_label = ctk.CTkLabel(self.inner_frame, text="",
-                                        image=self._placeholder(280, 280))
-        self.image_label.pack(pady=(30, 10))
+        # --- 2x2 Image Grid ---
+        self.grid_frame = ctk.CTkFrame(self.inner_frame, fg_color="transparent")
+        self.grid_frame.pack(pady=(20, 10))
+        self.grid_frame.grid_columnconfigure((0, 1), weight=1)
+        self.grid_frame.grid_rowconfigure((0, 1), weight=1)
+        
+        self.panel_original = self._create_image_panel(self.grid_frame, "Original", 0, 0)
+        self.panel_blur     = self._create_image_panel(self.grid_frame, "DL Denoised", 0, 1)
+        self.panel_edge     = self._create_image_panel(self.grid_frame, "Edges", 1, 0)
+        self.panel_final    = self._create_image_panel(self.grid_frame, "Final", 1, 1)
 
         # --- Prediction result ---
         self.pokemon_name_label = ctk.CTkLabel(
@@ -245,6 +252,17 @@ class PokedexApp(ctk.CTk):
                                        font=ctk.CTkFont("Arial", 15, "bold"),
                                        text_color="#A0A0A0")
         self.idle_label.place(relx=0.5, rely=0.6, anchor="center")
+
+    def _create_image_panel(self, parent, title, row, col):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.grid(row=row, column=col, padx=8, pady=8)
+        
+        lbl_title = ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=12, weight="bold"), text_color=self.text_secondary)
+        lbl_title.pack(pady=(0, 2))
+
+        lbl_img = ctk.CTkLabel(frame, text="", image=self._placeholder(150, 150))
+        lbl_img.pack()
+        return lbl_img
 
     # ===========================================================
     #  INFO PANEL (Right) — PokéAPI Data
@@ -340,6 +358,8 @@ class PokedexApp(ctk.CTk):
         return ctk.CTkImage(img, size=(w, h))
 
     def _cv2_to_ctk(self, img, size=(280, 280)):
+        if img is None:
+            return self._placeholder(*size)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img_pil = Image.fromarray(img_rgb)
         return ctk.CTkImage(light_image=img_pil, dark_image=img_pil, size=size)
@@ -388,12 +408,13 @@ class PokedexApp(ctk.CTk):
 
         self.status_label.configure(text="⏳ Đang phân tích...")
 
-        # Display image behind the Pokéball
-        display_img = cv2.imread(path)
-        if display_img is not None:
-            display_img = cv2.resize(display_img, (280, 280))
-            ctk_img = self._cv2_to_ctk(display_img, size=(280, 280))
-            self.image_label.configure(image=ctk_img)
+        # Fetch 4-stage pipeline images
+        steps = extract_pokemon_debug(path)
+        if steps:
+            self.panel_original.configure(image=self._cv2_to_ctk(steps["original"], (150, 150)))
+            self.panel_blur.configure(image=self._cv2_to_ctk(steps["blur"], (150, 150)))
+            self.panel_edge.configure(image=self._cv2_to_ctk(steps["edges"], (150, 150)))
+            self.panel_final.configure(image=self._cv2_to_ctk(steps["combine"], (150, 150)))
 
         # --- CNN Prediction ---
         try:
