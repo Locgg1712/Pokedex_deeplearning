@@ -1,60 +1,59 @@
 # src/preprocess.py
+# Preprocessing pipeline for Deep Learning CNN inference and training.
 
 import cv2
 import numpy as np
+from PIL import Image
+from torchvision import transforms
+
+# ==============================
+# IMAGE SIZE CONSTANTS
+# ==============================
+
+IMG_SIZE = 128  # Standard input size for the CNN
 
 
-def bilateral_denoise(img):
-    # Bước 1: Khử nhiễu Median Blur
-    img = cv2.medianBlur(img, 3)
-    # Bước 2: Khử nhiễu Gaussian giữ cạnh
-    return cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+# ==============================
+# TRANSFORMS (for PyTorch tensors)
+# ==============================
+
+def get_train_transforms():
+    """Augmentation + normalization transforms used during training."""
+    return transforms.Compose([
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.RandomRotation(degrees=20),
+        transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
+        transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.8, 1.2)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
 
 
-def auto_canny(gray, sigma=0.33):
-    median = np.median(gray)
-    lower  = int(max(0,   (1.0 - sigma) * median))
-    upper  = int(min(255, (1.0 + sigma) * median))
-    return cv2.Canny(gray, lower, upper)
+def get_val_transforms():
+    """Normalization-only transforms used during validation / inference."""
+    return transforms.Compose([
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225]),
+    ])
 
 
-def clean_edges(edges):
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    return cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+# ==============================
+# RAW IMAGE LOADING (for GUI display)
+# ==============================
 
-
-# --- Dùng cho Model (train + predict) ---
-
-def extract_pokemon(image_path):
+def load_image_for_display(image_path, size=(256, 256)):
+    """Load and resize an image for GUI display (returns BGR cv2 image)."""
     img = cv2.imread(image_path)
     if img is None:
         return None
-
-    img = cv2.resize(img, (128, 128))
-    img = bilateral_denoise(img)
-
-    return cv2.resize(img, (64, 64))
+    return cv2.resize(img, size)
 
 
-# --- Dùng cho GUI ---
-
-def extract_pokemon_debug(image_path):
-    img = cv2.imread(image_path)
-    if img is None:
-        return None
-
-    original = cv2.resize(img, (128, 128))
-    denoised = bilateral_denoise(original)
-
-    gray      = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
-    edges     = auto_canny(gray)
-    edges     = clean_edges(edges)
-    edges_col = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-
-    return {
-        "original": original,
-        "blur":     denoised,
-        "edges":    edges_col,
-        "combine":  denoised,
-        "final":    cv2.resize(denoised, (64, 64))
-    }
+def load_image_pil(image_path):
+    """Load an image as a PIL RGB Image (for model inference)."""
+    img = Image.open(image_path).convert("RGB")
+    return img

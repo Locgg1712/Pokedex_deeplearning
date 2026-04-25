@@ -1,102 +1,58 @@
 # src/dataset.py
+# PyTorch Dataset for the Pokémon image classification task.
 
 import os
-import cv2
-import numpy as np
-from src.preprocess import extract_pokemon
-from src.features import extract_features
+from PIL import Image
+from torch.utils.data import Dataset
 
 
-# ==============================
-# AUGMENTATION
-# ==============================
-
-def augment(img):
+class PokemonDataset(Dataset):
     """
-    11 biến thể: hình học đa dạng + màu sắc + nhiễu.
+    Loads images from a directory structure:
+        data_dir/
+            class_name_1/
+                img1.png
+                img2.png
+            class_name_2/
+                ...
     """
-    results = [img]
-    h, w    = img.shape[:2]
-    center  = (w // 2, h // 2)
 
-    # ===== Hình học =====
+    def __init__(self, data_dir, transform=None):
+        self.data_dir = data_dir
+        self.transform = transform
+        self.samples = []      # list of (image_path, label_index)
+        self.class_names = []  # sorted list of class names
+        self.class_to_idx = {}
 
-    # 1. Flip ngang
-    results.append(cv2.flip(img, 1))
+        self._scan_directory()
 
-    # 2. Xoay +20°
-    M = cv2.getRotationMatrix2D(center, 20, 1.0)
-    results.append(cv2.warpAffine(img, M, (w, h)))
+    def _scan_directory(self):
+        """Walk the data directory and build the sample list."""
+        self.class_names = sorted([
+            d for d in os.listdir(self.data_dir)
+            if os.path.isdir(os.path.join(self.data_dir, d))
+        ])
+        self.class_to_idx = {name: idx for idx, name in enumerate(self.class_names)}
 
-    # 3. Xoay -20°
-    M = cv2.getRotationMatrix2D(center, -20, 1.0)
-    results.append(cv2.warpAffine(img, M, (w, h)))
+        for class_name in self.class_names:
+            class_path = os.path.join(self.data_dir, class_name)
+            for filename in os.listdir(class_path):
+                filepath = os.path.join(class_path, filename)
+                if self._is_image(filepath):
+                    self.samples.append((filepath, self.class_to_idx[class_name]))
 
-    # 4. Scale nhỏ lại 80% (zoom out)
-    M = cv2.getRotationMatrix2D(center, 0, 0.8)
-    results.append(cv2.warpAffine(img, M, (w, h)))
+    @staticmethod
+    def _is_image(path):
+        return path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp'))
 
-    # 5. Shear ngang nhẹ
-    shear = np.float32([[1, 0.15, 0], [0, 1, 0]])
-    results.append(cv2.warpAffine(img, shear, (w, h)))
+    def __len__(self):
+        return len(self.samples)
 
-    # 6. Translate phải-xuống
-    M = np.float32([[1, 0, 8], [0, 1, 8]])
-    results.append(cv2.warpAffine(img, M, (w, h)))
+    def __getitem__(self, idx):
+        path, label = self.samples[idx]
+        image = Image.open(path).convert("RGB")
 
-    # 7. Translate trái-lên
-    M = np.float32([[1, 0, -8], [0, 1, -8]])
-    results.append(cv2.warpAffine(img, M, (w, h)))
+        if self.transform:
+            image = self.transform(image)
 
-    # ===== Màu sắc =====
-
-    # 8. Sáng hơn
-    results.append(cv2.convertScaleAbs(img, alpha=1.3, beta=20))
-
-    # 9. Tối hơn
-    results.append(cv2.convertScaleAbs(img, alpha=0.7, beta=-20))
-
-    # 10. Nhiễu Gaussian nhẹ
-    noise = np.random.normal(0, 8, img.shape).astype(np.int16)
-    noisy = np.clip(img.astype(np.int16) + noise, 0, 255).astype(np.uint8)
-    results.append(noisy)
-
-    return results  # 11 ảnh
-
-
-# ==============================
-# LOAD DATASET
-# ==============================
-
-def load_dataset(data_dir):
-    X, y     = [], []
-    labels   = {}
-    label_id = 0
-
-    class_names = sorted([
-        d for d in os.listdir(data_dir)
-        if os.path.isdir(os.path.join(data_dir, d))
-    ])
-
-    for class_name in class_names:
-        class_path     = os.path.join(data_dir, class_name)
-        labels[label_id] = class_name
-
-        count = 0
-        for file in os.listdir(class_path):
-            path = os.path.join(class_path, file)
-            img  = extract_pokemon(path)
-            if img is None:
-                continue
-
-            for aug in augment(img):
-                feat = extract_features(aug)
-                X.append(feat)
-                y.append(label_id)
-                count += 1
-
-        print(f"  {class_name}: {count} ảnh (sau augment)")
-        label_id += 1
-
-    print(f"\nTổng: {len(X)} samples, {len(labels)} classes")
-    return np.array(X), np.array(y), labels
+        return image, label
