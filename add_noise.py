@@ -36,7 +36,7 @@ def speckle_noise(img):
 
 # --- Main ---
 
-img_path = "test/squirtle.jpg"   # ảnh của bạn
+img_path = "test/squirtle 2.png"   # ảnh của bạn
 img = cv2.imread(img_path)
 
 if img is None:

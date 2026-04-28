@@ -16,19 +16,92 @@ from src.denoise_dl import UNetDenoise
 IMG_SIZE = 128  # Standard input size for the CNN
 
 
+import random
+
+# ==============================
+# CUSTOM AUGMENTATIONS
+# ==============================
+
+class RandomOcclusion(object):
+    """Randomly covers 10%-30% of the image with a noise patch to simulate occlusion/accessories."""
+    def __init__(self, p=0.5, scale=(0.1, 0.3)):
+        self.p = p
+        self.scale = scale
+        
+    def __call__(self, tensor):
+        if random.random() < self.p:
+            c, h, w = tensor.size()
+            area = h * w
+            target_area = random.uniform(self.scale[0], self.scale[1]) * area
+            aspect_ratio = random.uniform(0.5, 2.0)
+            
+            h_occ = int(round((target_area * aspect_ratio) ** 0.5))
+            w_occ = int(round((target_area / aspect_ratio) ** 0.5))
+            
+            if w_occ < w and h_occ < h:
+                y = random.randint(0, h - h_occ)
+                x = random.randint(0, w - w_occ)
+                
+                # Fill with random noise patch to simulate complex occlusion
+                noise_patch = torch.rand((c, h_occ, w_occ))
+                tensor[:, y:y+h_occ, x:x+w_occ] = noise_patch
+                
+        return tensor
+
+class AddGaussianNoise(object):
+    """Adds Gaussian noise to the tensor image."""
+    def __init__(self, p=0.5, std=0.05):
+        self.p = p
+        self.std = std
+        
+    def __call__(self, tensor):
+        if random.random() < self.p:
+            noise = torch.randn(tensor.size()) * self.std
+            return torch.clamp(tensor + noise, 0., 1.)
+        return tensor
+
+class AddSaltPepperNoise(object):
+    """Adds Salt and Pepper noise to the tensor image."""
+    def __init__(self, p=0.5, amount=0.04):
+        self.p = p
+        self.amount = amount
+        
+    def __call__(self, tensor):
+        if random.random() < self.p:
+            noise = torch.rand(tensor.size())
+            tensor[noise < (self.amount / 2)] = 1.0  # Salt
+            tensor[noise > (1 - self.amount / 2)] = 0.0  # Pepper
+        return tensor
+
 # ==============================
 # TRANSFORMS (for PyTorch tensors)
 # ==============================
 
 def get_train_transforms():
-    """Augmentation + normalization transforms used during training."""
+    """Robust augmentation + normalization transforms used during training."""
     return transforms.Compose([
+        # 1. Resize
         transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        
+        # 2. Geometric & Color Augmentations (PIL)
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomRotation(degrees=20),
         transforms.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2),
         transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.8, 1.2)),
+        
+        # 3. Blur Augmentation (PIL)
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=5, sigma=(0.1, 2.0))], p=0.3),
+        
+        # 4. Tensor conversion
         transforms.ToTensor(),
+        
+        # 5. Tensor-based Augmentations (Occlusion, Erasing, Noise)
+        RandomOcclusion(p=0.4, scale=(0.1, 0.3)),
+        transforms.RandomErasing(p=0.5, scale=(0.02, 0.2), ratio=(0.3, 3.3), value=0), # Solid patch
+        AddGaussianNoise(p=0.3, std=0.05),
+        AddSaltPepperNoise(p=0.2, amount=0.04),
+        
+        # 6. Normalization
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
     ])

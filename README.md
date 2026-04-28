@@ -1,146 +1,96 @@
-# Pokédex DSP Visual – Hệ thống nhận diện Pokémon
+# Pokédex DL – Hệ thống nhận diện Pokémon (Deep Learning)
 
-##  Giới thiệu
+## Giới thiệu
 
-Dự án này xây dựng một hệ thống **nhận diện Pokémon từ ảnh** bằng cách kết hợp:
+Dự án này xây dựng một hệ thống **Nhận diện Pokémon từ ảnh** ứng dụng **Deep Learning (Học sâu)** kết hợp với giao diện người dùng hiện đại. 
 
-* Xử lý tín hiệu số (Digital Signal Processing – DSP)
-*  Học máy (Machine Learning – ML)
+Đây là bản nâng cấp toàn diện từ hệ thống Xử lý tín hiệu số (DSP) truyền thống sang việc sử dụng hoàn toàn Mạng Nơ-ron Tích chập (CNN) cho cả quá trình khử nhiễu (Denoise) và phân loại ảnh (Classification). Hệ thống nhận đầu vào là một ảnh và trả về:
 
-Hệ thống nhận đầu vào là một ảnh và trả về:
-
-* Tên Pokémon
-* Độ tin cậy (confidence)
-
-Ý tưởng chính là coi ảnh như một **tín hiệu số 2 chiều**, áp dụng DSP để trích xuất đặc trưng, sau đó dùng ML để phân loại.
+* Tên Pokémon dự đoán (Top-3 kết quả)
+* Độ tin cậy (Confidence)
+* Thông tin chi tiết được lấy theo thời gian thực từ PokéAPI (Loại, Chiều cao, Cân nặng, Ảnh Sprite)
 
 ---
 
-##  Pipeline tổng thể
+## Tính năng nổi bật
+
+1. **Khử nhiễu bằng Trí tuệ nhân tạo:** Thay thế các bộ lọc cổ điển bằng **Convolutional Autoencoder** để làm sạch nhiễu và bảo toàn cấu trúc ảnh.
+2. **Nhận diện chính xác cao:** Sử dụng **MobileNetV2** (áp dụng Transfer Learning) giúp mô hình có khả năng trích xuất đặc trưng mạnh mẽ và tốc độ dự đoán cực nhanh.
+3. **Giao diện hiện đại (CustomTkinter):** Thiết kế Dark Mode chuyên nghiệp với **Animation Pokéball** tương tác mượt mà.
+4. **Hiển thị Pipeline 4 bước (4-Stage Visual):** Người dùng có thể xem toàn bộ quá trình hệ thống xử lý ảnh: *Ảnh gốc -> Ảnh Khử nhiễu (DL) -> Tìm biên (Edges) -> Ảnh cuối cùng*.
+5. **Tích hợp PokéAPI:** Tự động gọi API dưới nền (background thread) để hiển thị thông số chi tiết của Pokémon mà không làm đơ giao diện.
+6. **Lịch sử tìm kiếm:** Tự động lưu và hiển thị lại các Pokémon đã nhận diện nhờ tích hợp cơ sở dữ liệu SQLite.
+
+---
+
+## Pipeline tổng thể
 
 ```
 Ảnh đầu vào 
-   → Tiền xử lý (DSP)
-   → Trích đặc trưng (HOG + Color + Fourier)
-   → Chuẩn hóa (Scaling)
-   → Phân loại (SVM)
-   → Kết quả (Tên + Confidence)
+   → Tiền xử lý (Convolutional Autoencoder khử nhiễu + Canny Edge Detection)
+   → Mô hình nhận diện (CNN - MobileNetV2)
+   → Kết quả (Tên + Độ tin cậy)
+   → Ghi log Lịch sử (SQLite)
+   → Gọi PokéAPI lấy thông số 
+   → Hiển thị lên UI (CustomTkinter)
 ```
 
 ---
 
-##  Các thành phần chính
-
-### 1. Tiền xử lý (DSP)
-
-* Resize ảnh về kích thước chuẩn
-* Khử nhiễu bằng **Bilateral Filter**
-* Tách foreground bằng **Otsu + fallback**
-* Phát hiện biên bằng **Canny** (phục vụ feature)
-
- Mục đích:
-
-* Loại bỏ nhiễu
-* Làm nổi bật cấu trúc (biên, hình dạng)
-
----
-
-### 2. Trích xuất đặc trưng
-
-Hệ thống sử dụng kết hợp 3 loại đặc trưng:
-
-####  HOG (Histogram of Oriented Gradients)
-
-* Mô tả hình dạng và cấu trúc
-* Ít bị ảnh hưởng bởi ánh sáng
-
----
-
-####  HSV Color Histogram
-
-* Mô tả phân bố màu sắc
-* Rất hiệu quả với Pokémon có màu đặc trưng (ví dụ: Pikachu màu vàng)
-
----
-
-####  Fourier Descriptors (DSP)
-
-* Mô tả hình dạng tổng thể dựa trên miền tần số
-* Giúp phân biệt các đối tượng theo contour
-
----
-
-### 3. Mô hình học máy
-
-* Thuật toán: **SVM (Support Vector Machine)**
-* Kernel: RBF
-* Tối ưu tham số bằng GridSearchCV
-
----
-
-##  Kết quả
-
-* Độ chính xác: **~94%**
-* Nhận diện tốt các Pokémon có màu đặc trưng
-* Nhầm lẫn nhẹ giữa các Pokémon có màu/hình dạng tương tự
-
----
-
-##  Cấu trúc project
+## Cấu trúc Project
 
 ```
-POKEDEX/
+POKEDEXX_DL/
 │
 ├── src/
-│   ├── preprocess.py
-│   ├── features.py
-│   ├── dataset.py
-│   ├── train.py
-│   ├── predict.py
-│   └── app.py
-│── test/               # ảnh test
-├── data/              # (không bao gồm)
-├── model.pkl          # (không bao gồm)
-├── README.md
+│   ├── app.py             # Giao diện chính (CustomTkinter)
+│   ├── model_dl.py        # Kiến trúc mô hình CNN (MobileNetV2)
+│   ├── denoise_dl.py      # Mô hình Convolutional Autoencoder khử nhiễu
+│   ├── predict_dl.py      # Hàm suy luận (Inference)
+│   ├── train_dl.py        # Script huấn luyện mô hình
+│   ├── preprocess.py      # Pipeline xử lý ảnh (OpenCV)
+│   ├── dataset.py         # Xử lý DataLoader cho PyTorch
+│   ├── api.py             # Gọi dữ liệu từ PokéAPI
+│   └── history.py         # Xử lý database SQLite lưu lịch sử
+│
+├── data/                  # Dataset ảnh (Không bao gồm trên GitHub)
+├── Model/                 # Lưu trọng số mô hình đã train (.pth)
+├── history.db             # CSDL lưu trữ lịch sử nhận diện
+├── README.md              
 └── .gitignore
 ```
 
 ---
 
-##  Lưu ý
+## Công nghệ sử dụng
 
-* Dataset không được đưa lên GitHub do dung lượng lớn
-* Model không được cung cấp (có thể train lại)
-* Dự án tập trung vào sự kết hợp giữa DSP và ML
-
----
-
-##  Đóng góp chính
-
-* Kết hợp DSP và ML trong bài toán nhận diện ảnh
-* Sử dụng Fourier Descriptor (DSP) để mô tả hình dạng
-* Pipeline hiệu quả, đạt độ chính xác cao (~94%)
+* **Deep Learning & Computer Vision:**
+  * `PyTorch` / `Torchvision`: Xây dựng và huấn luyện mô hình CNN & Autoencoder.
+  * `OpenCV` / `Pillow (PIL)`: Xử lý kích thước, không gian màu và tiền xử lý ảnh.
+* **Giao diện (GUI):**
+  * `CustomTkinter`: Giao diện đồ họa tối giản, Dark Mode hiện đại.
+* **Backend & API:**
+  * `Requests`: Lấy thông tin từ PokéAPI.
+  * `SQLite3`: Lưu trữ dữ liệu dự đoán cục bộ.
+  * `Threading`: Xử lý đa luồng giúp UI mượt mà khi tải mạng.
 
 ---
 
-##  Công nghệ sử dụng
+## Lưu ý
 
-* Python
-* OpenCV
-* NumPy
-* Scikit-learn
-* Matplotlib
+* Do giới hạn dung lượng, **Dataset** và **Trọng số mô hình (Weights)** không được đính kèm trực tiếp. Bạn cần tải dataset và chạy script `train_dl.py` để tạo file trọng số.
+* Cần đảm bảo có kết nối Internet để ứng dụng có thể lấy được thông tin chi tiết từ PokéAPI.
 
 ---
 
-##  Tác giả
+## Tác giả
 
-* LOCGG1712 – Đồ án Xử lý tín hiệu số
-
----
-
-##  Kết luận
-
-Dự án cho thấy việc áp dụng **Xử lý tín hiệu số (DSP)** giúp cải thiện đáng kể hiệu quả của mô hình học máy trong bài toán nhận diện ảnh, bằng cách trích xuất các đặc trưng quan trọng và giảm nhiễu dữ liệu đầu vào.
+* **LOCGG1712** – Nâng cấp và phát triển hệ thống Pokedex Deep Learning.
 
 ---
+
+## Hướng phát triển tương lai
+
+* Chuyển đổi mô hình sang chuẩn **ONNX** để tối ưu hóa tốc độ chạy suy luận (Inference) trên CPU.
+* Mở rộng số lượng class (nhận diện toàn bộ Gen 1 hoặc nhiều hơn).
+* Đóng gói dự án thành file thực thi `.exe` độc lập.
