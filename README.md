@@ -20,6 +20,7 @@ Dự án này xây dựng một hệ thống **Nhận diện Pokémon từ ảnh
 4. **Hiển thị Pipeline 4 bước (4-Stage Visual):** Người dùng có thể xem toàn bộ quá trình hệ thống xử lý ảnh: *Ảnh gốc -> Ảnh Khử nhiễu (DL) -> Tìm biên (Edges) -> Ảnh cuối cùng*.
 5. **Tích hợp PokéAPI:** Tự động gọi API dưới nền (background thread) để hiển thị thông số chi tiết của Pokémon mà không làm đơ giao diện.
 6. **Lịch sử tìm kiếm:** Tự động lưu và hiển thị lại các Pokémon đã nhận diện nhờ tích hợp cơ sở dữ liệu SQLite.
+7. **Nhận diện Real-time đa đối tượng:** Tích hợp **YOLOv8n** kết hợp với Pokémon CNN để phát hiện và định danh nhiều đối tượng cùng lúc (Người, Pokémon, Vật thể khác) ngay trên luồng Camera với Bounding Box thời gian thực.
 
 ---
 
@@ -51,7 +52,9 @@ POKEDEXX_DL/
 │   ├── preprocess.py      # Pipeline xử lý ảnh (OpenCV)
 │   ├── dataset.py         # Xử lý DataLoader cho PyTorch
 │   ├── api.py             # Gọi dữ liệu từ PokéAPI
-│   └── history.py         # Xử lý database SQLite lưu lịch sử
+│   ├── history.py         # Xử lý database SQLite lưu lịch sử
+│   ├── detector.py        # Logic Hybrid (YOLOv8 + Pokémon CNN)
+│   └── cameradl.py        # Giao diện Camera Real-time đa đối tượng
 │
 ├── data/                  # Dataset ảnh (Không bao gồm trên GitHub)
 ├── Model/                 # Lưu trọng số mô hình đã train (.pth)
@@ -73,6 +76,7 @@ POKEDEXX_DL/
   * `Requests`: Lấy thông tin từ PokéAPI.
   * `SQLite3`: Lưu trữ dữ liệu dự đoán cục bộ.
   * `Threading`: Xử lý đa luồng giúp UI mượt mà khi tải mạng.
+  * `Ultralytics (YOLOv8)`: Phát hiện đối tượng và xác định vị trí (Bounding Box).
 
 ---
 
@@ -82,6 +86,10 @@ POKEDEXX_DL/
 * Cần đảm bảo có kết nối Internet để ứng dụng có thể lấy được thông tin chi tiết từ PokéAPI.
 
 ---
+## Tải data set để chạy lại model 
+```bash
+ https://www.kaggle.com/datasets/noodulz/pokemon-dataset-1000 
+```
 
 ## Tác giả
 
