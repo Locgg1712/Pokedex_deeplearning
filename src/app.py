@@ -1,6 +1,7 @@
-# src/app.py
+# src/app.py  (Deep Learning version — with real-time camera support)
 # Pokédex Deep Learning GUI — CustomTkinter application.
 # Pipeline: Image → CNN → Label → PokéAPI → History → UI
+# NEW: Real-time webcam recognition via 📷 Camera button
 
 import customtkinter as ctk
 from tkinter import filedialog
@@ -13,6 +14,7 @@ from src.predict_dl import predict
 from src.preprocess import extract_pokemon_debug
 from src.api import fetch_pokemon_info
 from src.history import log_prediction, get_history
+from src.cameradl import CameraWindow             # ← NEW
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -45,6 +47,8 @@ class PokedexApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=0, minsize=260)  # History
         self.grid_columnconfigure(1, weight=1, minsize=440)  # Main
         self.grid_columnconfigure(2, weight=0, minsize=280)  # Info
+
+        self._camera_window = None   # track open camera window
 
         self._build_history_panel()
         self._build_main_panel()
@@ -88,7 +92,6 @@ class PokedexApp(ctk.CTk):
         self.history_scroll.pack(fill="both", expand=True, padx=8, pady=(0, 12))
 
     def _refresh_history(self):
-        """Reload history list from database."""
         for widget in self.history_scroll.winfo_children():
             widget.destroy()
 
@@ -104,7 +107,6 @@ class PokedexApp(ctk.CTk):
             self._create_history_card(rec)
 
     def _create_history_card(self, rec):
-        """Create a single history entry card."""
         card = ctk.CTkFrame(self.history_scroll, fg_color=self.card_bg,
                             corner_radius=8, height=60)
         card.pack(fill="x", pady=3, padx=4)
@@ -113,14 +115,14 @@ class PokedexApp(ctk.CTk):
         inner = ctk.CTkFrame(card, fg_color="transparent")
         inner.pack(fill="both", expand=True, padx=10, pady=6)
 
-        # Name + confidence
         name_lbl = ctk.CTkLabel(inner, text=rec["predicted_label"].capitalize(),
                                 font=ctk.CTkFont(size=13, weight="bold"),
                                 text_color=self.text_primary)
         name_lbl.pack(anchor="w")
 
         conf = rec["confidence"]
-        color = self.accent_green if conf > 0.8 else (self.accent_yellow if conf > 0.5 else self.accent_red)
+        color = self.accent_green if conf > 0.8 else (
+            self.accent_yellow if conf > 0.5 else self.accent_red)
 
         detail_text = f"{conf*100:.1f}%  •  {rec['timestamp'][:16]}"
         ctk.CTkLabel(inner, text=detail_text,
@@ -151,7 +153,15 @@ class PokedexApp(ctk.CTk):
                      font=ctk.CTkFont("Arial", 13),
                      text_color=self.text_secondary).pack(side="left", padx=12)
 
-        # Upload button
+        # ── NEW: Camera button ──────────────────────────────────────
+        self.camera_btn = ctk.CTkButton(
+            top, text="📷 Camera", width=110, height=36,
+            fg_color="#1D4ED8", hover_color="#1E40AF",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            corner_radius=8, command=self._open_camera)
+        self.camera_btn.pack(side="right", padx=(8, 0))
+        # ───────────────────────────────────────────────────────────
+
         self.upload_btn = ctk.CTkButton(
             top, text="📁 Chọn Ảnh", width=130, height=36,
             fg_color=self.accent_red, hover_color="#D93232",
@@ -164,31 +174,29 @@ class PokedexApp(ctk.CTk):
                                                 fg_color="transparent")
         self.pokeball_container.pack(expand=True)
 
-        # Inner content (shown when Pokéball opens)
         self.inner_frame = ctk.CTkFrame(self.pokeball_container, width=500, height=500,
                                         fg_color=self.card_bg, corner_radius=20)
         self.inner_frame.place(relx=0.5, rely=0.5, anchor="center")
         self.inner_frame.pack_propagate(False)
 
-        # --- 2x2 Image Grid ---
+        # 2×2 image grid
         self.grid_frame = ctk.CTkFrame(self.inner_frame, fg_color="transparent")
         self.grid_frame.pack(pady=(20, 10))
         self.grid_frame.grid_columnconfigure((0, 1), weight=1)
         self.grid_frame.grid_rowconfigure((0, 1), weight=1)
-        
-        self.panel_original = self._create_image_panel(self.grid_frame, "Original", 0, 0)
-        self.panel_blur     = self._create_image_panel(self.grid_frame, "DL Denoised", 0, 1)
-        self.panel_edge     = self._create_image_panel(self.grid_frame, "Edges", 1, 0)
-        self.panel_final    = self._create_image_panel(self.grid_frame, "Final", 1, 1)
 
-        # --- Prediction result ---
+        self.panel_original = self._create_image_panel(self.grid_frame, "Original",     0, 0)
+        self.panel_blur      = self._create_image_panel(self.grid_frame, "DL Denoised", 0, 1)
+        self.panel_edge      = self._create_image_panel(self.grid_frame, "Edges",       1, 0)
+        self.panel_final     = self._create_image_panel(self.grid_frame, "Final",       1, 1)
+
+        # Prediction result
         self.pokemon_name_label = ctk.CTkLabel(
             self.inner_frame, text="Chưa xác định",
             font=ctk.CTkFont("Arial", 32, "bold"),
             text_color=self.text_primary)
         self.pokemon_name_label.pack(pady=(5, 2))
 
-        # Confidence bar
         bar_frame = ctk.CTkFrame(self.inner_frame, fg_color="transparent")
         bar_frame.pack(pady=(5, 2))
 
@@ -203,13 +211,12 @@ class PokedexApp(ctk.CTk):
                                               text_color=self.text_secondary, width=55)
         self.confidence_label.pack(side="left", padx=(8, 0))
 
-        # Top-3 predictions
         self.top3_label = ctk.CTkLabel(self.inner_frame, text="",
                                         font=ctk.CTkFont("Arial", 12),
                                         text_color=self.text_secondary, justify="center")
         self.top3_label.pack(pady=(8, 0))
 
-        # ===== Pokéball shell =====
+        # Pokéball shell
         pokeball_red   = "#e74c3c"
         pokeball_white = "#ffffff"
         pokeball_black = "#000000"
@@ -222,7 +229,6 @@ class PokedexApp(ctk.CTk):
                                      fg_color=pokeball_white, corner_radius=30)
         self.bot_half.place(relx=0.5, rely=0.75, anchor="center")
 
-        # Divider lines
         self.top_line = ctk.CTkFrame(self.top_half, width=520, height=10,
                                      fg_color=pokeball_black)
         self.top_line.place(relx=0.5, rely=1.0, anchor="s")
@@ -231,7 +237,6 @@ class PokedexApp(ctk.CTk):
                                      fg_color=pokeball_black)
         self.bot_line.place(relx=0.5, rely=0.0, anchor="n")
 
-        # Center button
         self.center_ring = ctk.CTkFrame(self.pokeball_container, width=120, height=120,
                                         corner_radius=60, fg_color=pokeball_black)
         self.center_ring.place(relx=0.5, rely=0.5, anchor="center")
@@ -247,7 +252,6 @@ class PokedexApp(ctk.CTk):
             command=self.load_image)
         self.center_btn.place(relx=0.5, rely=0.5, anchor="center")
 
-        # Idle hint
         self.idle_label = ctk.CTkLabel(self.bot_half, text="Click để phân tích",
                                        font=ctk.CTkFont("Arial", 15, "bold"),
                                        text_color="#A0A0A0")
@@ -256,9 +260,9 @@ class PokedexApp(ctk.CTk):
     def _create_image_panel(self, parent, title, row, col):
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.grid(row=row, column=col, padx=8, pady=8)
-        
-        lbl_title = ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=12, weight="bold"), text_color=self.text_secondary)
-        lbl_title.pack(pady=(0, 2))
+
+        ctk.CTkLabel(frame, text=title, font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=self.text_secondary).pack(pady=(0, 2))
 
         lbl_img = ctk.CTkLabel(frame, text="", image=self._placeholder(150, 150))
         lbl_img.pack()
@@ -277,37 +281,32 @@ class PokedexApp(ctk.CTk):
                      font=ctk.CTkFont("Arial", 16, "bold"),
                      text_color=self.text_primary).pack(padx=16, pady=(20, 12), anchor="w")
 
-        # Info container
         self.info_container = ctk.CTkFrame(self.info_panel, fg_color=self.card_bg,
                                            corner_radius=12)
         self.info_container.pack(fill="x", padx=12, pady=(0, 8))
 
-        # Sprite image
         self.sprite_label = ctk.CTkLabel(self.info_container, text="",
                                           image=self._placeholder(140, 140))
         self.sprite_label.pack(pady=(16, 8))
 
-        # Info fields
-        self.info_name = self._info_row(self.info_container, "Tên", "—")
-        self.info_types = self._info_row(self.info_container, "Loại", "—")
-        self.info_height = self._info_row(self.info_container, "Chiều cao", "—")
-        self.info_weight = self._info_row(self.info_container, "Cân nặng", "—")
+        self.info_name   = self._info_row(self.info_container, "Tên",        "—")
+        self.info_types  = self._info_row(self.info_container, "Loại",       "—")
+        self.info_height = self._info_row(self.info_container, "Chiều cao",  "—")
+        self.info_weight = self._info_row(self.info_container, "Cân nặng",   "—")
 
-        # Separator
-        ctk.CTkFrame(self.info_panel, height=1, fg_color=self.border_color).pack(fill="x", padx=16, pady=12)
+        ctk.CTkFrame(self.info_panel, height=1, fg_color=self.border_color).pack(
+            fill="x", padx=16, pady=12)
 
-        # Status label
-        self.status_label = ctk.CTkLabel(self.info_panel, text="⏳ Sẵn sàng phân tích",
+        self.status_label = ctk.CTkLabel(self.info_panel,
+                                          text="⏳ Sẵn sàng phân tích",
                                           font=ctk.CTkFont(size=12),
                                           text_color=self.text_secondary, wraplength=240)
         self.status_label.pack(padx=16, pady=(0, 8), anchor="w")
 
-        # Type color badges area
         self.type_badge_frame = ctk.CTkFrame(self.info_panel, fg_color="transparent")
         self.type_badge_frame.pack(fill="x", padx=16, pady=(0, 16))
 
     def _info_row(self, parent, label_text, default_value):
-        """Create a labeled info row and return the value label for updating."""
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", padx=16, pady=4)
 
@@ -364,10 +363,6 @@ class PokedexApp(ctk.CTk):
         img_pil = Image.fromarray(img_rgb)
         return ctk.CTkImage(light_image=img_pil, dark_image=img_pil, size=size)
 
-    # ===========================================================
-    #  TYPE COLORS (for badges)
-    # ===========================================================
-
     TYPE_COLORS = {
         "Normal": "#A8A77A", "Fire": "#EE8130", "Water": "#6390F0",
         "Electric": "#F7D02C", "Grass": "#7AC74C", "Ice": "#96D9D6",
@@ -378,10 +373,8 @@ class PokedexApp(ctk.CTk):
     }
 
     def _show_type_badges(self, types):
-        """Display colored type badges."""
         for w in self.type_badge_frame.winfo_children():
             w.destroy()
-
         for t in types:
             color = self.TYPE_COLORS.get(t, "#666666")
             badge = ctk.CTkLabel(self.type_badge_frame, text=f" {t} ",
@@ -389,6 +382,31 @@ class PokedexApp(ctk.CTk):
                                  font=ctk.CTkFont(size=12, weight="bold"),
                                  text_color="#FFFFFF", height=26)
             badge.pack(side="left", padx=(0, 6), pady=2)
+
+    # ===========================================================
+    #  CAMERA — open / callback
+    # ===========================================================
+
+    def _open_camera(self):
+        """Open (or focus) the real-time camera recognition window."""
+        if self._camera_window is not None:
+            try:
+                self._camera_window.focus()
+                return
+            except Exception:
+                self._camera_window = None
+
+        self._camera_window = CameraWindow(
+            master=self,
+            on_capture_callback=self._on_camera_capture   # ← frame sent to main app
+        )
+
+    def _on_camera_capture(self, image_path: str):
+        """
+        Called (from camera window) when user captures a frame.
+        Runs the full predict+API pipeline exactly like load_image().
+        """
+        self.after(0, lambda: self._process_image(image_path))
 
     # ===========================================================
     #  MAIN ACTION: LOAD IMAGE → PREDICT → API → HISTORY
@@ -401,22 +419,22 @@ class PokedexApp(ctk.CTk):
         )
         if not path:
             return
+        self._process_image(path)
 
-        # Close Pokéball while processing
+    def _process_image(self, path: str):
+        """Shared pipeline for both file-load and camera-capture."""
         self._set_pokeball_closed()
         self.update()
 
         self.status_label.configure(text="⏳ Đang phân tích...")
 
-        # Fetch 4-stage pipeline images
         steps = extract_pokemon_debug(path)
         if steps:
             self.panel_original.configure(image=self._cv2_to_ctk(steps["original"], (150, 150)))
-            self.panel_blur.configure(image=self._cv2_to_ctk(steps["blur"], (150, 150)))
-            self.panel_edge.configure(image=self._cv2_to_ctk(steps["edges"], (150, 150)))
-            self.panel_final.configure(image=self._cv2_to_ctk(steps["combine"], (150, 150)))
+            self.panel_blur.configure    (image=self._cv2_to_ctk(steps["blur"],     (150, 150)))
+            self.panel_edge.configure    (image=self._cv2_to_ctk(steps["edges"],    (150, 150)))
+            self.panel_final.configure   (image=self._cv2_to_ctk(steps["combine"],  (150, 150)))
 
-        # --- CNN Prediction ---
         try:
             name, conf, top3 = predict(path)
 
@@ -425,25 +443,18 @@ class PokedexApp(ctk.CTk):
             self.confidence_bar.set(conf)
             self.confidence_label.configure(text=f"{conf*100:.1f}%")
 
-            if conf > 0.8:
-                bar_color = self.accent_green
-            elif conf > 0.5:
-                bar_color = self.accent_yellow
-            else:
-                bar_color = self.accent_red
+            bar_color = (self.accent_green if conf > 0.8 else
+                         self.accent_yellow if conf > 0.5 else self.accent_red)
             self.confidence_bar.configure(progress_color=bar_color)
             self.confidence_label.configure(text_color=bar_color)
 
-            # Top-3
             if top3:
                 lines = [f"{n.capitalize()}: {p*100:.1f}%" for n, p in top3]
                 self.top3_label.configure(text="Top-3:  " + "  |  ".join(lines))
 
-            # --- Log to History ---
             log_prediction(path, name, conf)
             self._refresh_history()
 
-            # --- Fetch PokéAPI in background ---
             self.status_label.configure(text="🌐 Đang tải thông tin từ PokéAPI...")
             threading.Thread(target=self._fetch_api, args=(name,), daemon=True).start()
 
@@ -454,16 +465,13 @@ class PokedexApp(ctk.CTk):
             self.top3_label.configure(text="")
             self.status_label.configure(text=f"❌ {str(e)}")
 
-        # Open Pokéball animation
         self.after(200, self._open_animation)
 
     def _fetch_api(self, pokemon_name):
-        """Fetch PokéAPI data on a background thread, then update UI on main thread."""
         info = fetch_pokemon_info(pokemon_name)
         self.after(0, lambda: self._update_info_panel(info))
 
     def _update_info_panel(self, info):
-        """Update the info panel with PokéAPI data (called on main thread)."""
         if info is None:
             self.status_label.configure(text="⚠️ Không thể kết nối PokéAPI")
             self.info_name.configure(text="—")
@@ -481,29 +489,24 @@ class PokedexApp(ctk.CTk):
         self._show_type_badges(info["types"])
         self.status_label.configure(text="✅ Phân tích hoàn tất")
 
-        # Load sprite from URL
         if info.get("sprite"):
             threading.Thread(target=self._load_sprite, args=(info["sprite"],),
                              daemon=True).start()
 
     def _load_sprite(self, url):
-        """Download and display the official artwork sprite."""
         try:
             import requests
             from io import BytesIO
             resp = requests.get(url, timeout=8)
             resp.raise_for_status()
             img = Image.open(BytesIO(resp.content)).convert("RGBA")
-
-            # Composite on dark background
-            bg = Image.new("RGBA", img.size, self.card_bg + "FF")
+            bg  = Image.new("RGBA", img.size, self.card_bg + "FF")
             bg.paste(img, (0, 0), img)
-            final = bg.convert("RGB")
-
+            final   = bg.convert("RGB")
             ctk_img = ctk.CTkImage(light_image=final, dark_image=final, size=(140, 140))
             self.after(0, lambda: self.sprite_label.configure(image=ctk_img))
         except Exception:
-            pass  # Silently fail — sprite is non-critical
+            pass
 
 
 if __name__ == "__main__":

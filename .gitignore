@@ -22,3 +22,8 @@ venv/
 # TEST
 test/
 Test/
+
+.antigravity/
+# LOCAL DATA / WEIGHTS
+*.pt
+history.db
